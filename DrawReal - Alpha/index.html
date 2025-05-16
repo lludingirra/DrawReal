@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Draw Real</title>
+    <style>
+        body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+    overflow: hidden;
+    background-color: #f0f0f0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+}
+
+.container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+#drawingCanvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background-color: #fff;
+    cursor: crosshair;
+    z-index: 1; /* Katmanların altında kalması için */
+}
+
+#toolbar.draggable {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    background-color: rgba(255, 255, 255, 0.9);
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    cursor: grab;
+    z-index: 10;
+}
+
+#toolbar.dragging {
+    cursor: grabbing;
+}
+
+.tool-button, .action-button {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: none;
+    border: none;
+    padding: 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    color: #333;
+    transition: background-color 0.2s ease-in-out;
+    font-size: 0.9rem;
+}
+
+.tool-button:hover, .action-button:hover {
+    background-color: #e0e0e0;
+}
+
+.tool-button.active {
+    background-color: #007bff;
+    color: #fff;
+}
+
+.tool-button svg, .action-button svg {
+    width: 20px;
+    height: 20px;
+    fill: currentColor;
+}
+
+.tool-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 10px; /* Gruplar arası boşluk */
+}
+
+.input-label {
+    font-size: 0.8rem;
+    color: #555;
+}
+
+input[type="color"] {
+    border: none;
+    width: 30px;
+    height: 30px;
+    border-radius: 4px;
+    cursor: pointer;
+    background-color: #fff;
+    padding: 0;
+}
+
+input[type="color"]::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+
+input[type="color"]::-webkit-color-swatch {
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+input[type="range"] {
+    width: 100%;
+    cursor: pointer;
+}
+
+#penSizeValue {
+    font-size: 0.8rem;
+    color: #555;
+    text-align: right;
+}
+
+#eraserCursor {
+    position: absolute;
+    border: 2px solid #888;
+    border-radius: 50%;
+    pointer-events: none;
+    display: none;
+    z-index: 11;
+    background-color: rgba(255, 255, 255, 0.7);
+}
+
+/* Katman Kontrolleri */
+#layerControls {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+#addLayerButton {
+    background: none;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: #333;
+    transition: background-color 0.2s ease-in-out;
+}
+
+#addLayerButton:hover {
+    background-color: #f0f0f0;
+}
+
+#layerList {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-top: 5px;
+}
+
+.layer {
+    background-color: #eee;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    color: #333;
+    transition: background-color 0.2s ease-in-out;
+    text-align: center;
+}
+
+.layer.active {
+    background-color: #007bff;
+    color: #fff;
+    border-color: #007bff;
+}
+
+.layer:hover {
+    background-color: #d0d0d0;
+}
+
+.save-group {
+    display: flex;
+    gap: 5px;
+    flex-direction: row; /* Kaydet butonlarını yan yana */
+}
+
+#textInput {
+    border: 1px solid #ccc;
+    padding: 5px;
+    box-sizing: border-box;
+}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <canvas id="drawingCanvas"></canvas>
+        <div id="toolbar" class="draggable">
+            <div class="tool-group">
+                <button id="penToolButton" class="tool-button active" data-tool="pen" title="Kalem">
+                    <svg viewBox="0 0 24 24"><path d="M3 17v3a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-3a5 5 0 0 1 10 0v3a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-3s-4-9-9-9-9 9-9 9zM12 4a3 3 0 1 1 0 6 3 3 0 0 1 0-6z"/></svg>
+                    <span>Kalem</span>
+                </button>
+                <button id="lineToolButton" class="tool-button" data-tool="line" title="Çizgi">
+                    <svg viewBox="0 0 24 24"><path d="M4 4l16 16M4 20l16-16"/></svg>
+                    <span>Çizgi</span>
+                </button>
+                <button id="rectToolButton" class="tool-button" data-tool="rect" title="Dikdörtgen">
+                    <svg viewBox="0 0 24 24"><path d="M3 3h18v18H3V3z"/></svg>
+                    <span>Dikdörtgen</span>
+                </button>
+                <button id="circleToolButton" class="tool-button" data-tool="circle" title="Daire">
+                    <svg viewBox="0 0 24 24"><path d="M12 2A10 10 0 0 0 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2z"/></svg>
+                    <span>Daire</span>
+                </button>
+                <button id="textToolButton" class="tool-button" data-tool="text" title="Metin">
+                    <svg viewBox="0 0 24 24"><path d="M5 4v3h5.5v12h3V7H19V4H5z"/></svg>
+                    <span>Metin</span>
+                </button>
+                <button id="eraserToolButton" class="tool-button" data-tool="eraser" title="Silgi">
+                    <svg viewBox="0 0 24 24"><path d="M19 2H5a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2m0 2v16H5V4h14zM9 18h6v-2H9v2zm0-4h6v-2H9v2zm0-4h6v-2H9v2z"/></svg>
+                    <span>Silgi</span>
+                </button>
+            </div>
+
+            <div class="tool-group">
+                <label for="penColor" class="input-label">Renk:</label>
+                <input type="color" id="penColor" value="#333333">
+            </div>
+
+            <div class="tool-group">
+                <label for="penSize" class="input-label">Boyut:</label>
+                <input type="range" id="penSize" min="1" max="25" value="5">
+                <span id="penSizeValue">5</span>
+            </div>
+
+            <div class="tool-group">
+                <label class="input-label">Katmanlar:</label>
+                <div id="layerControls">
+                    <button id="addLayerButton">Yeni Katman</button>
+                    <div id="layerList">
+                        <div class="layer active" data-layer-id="0">Katman 1</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tool-group">
+                <label for="promptInput" class="input-label">İstem (Prompt):</label>
+                <input type="text" id="promptInput" placeholder="Ne üretmek istediğinizi yazın...">
+                <button id="generateButton" class="action-button primary" title="Üret">
+                    <svg viewBox="0 0 24 24"><path d="M19.97 21H4.03c-1.1 0-2.01-.9-2.01-2L2 5c0-1.1.9-2 2-2h16c1.1 0 2 .9 2 2l.03 14c0 1.1-.9 2-2 2zM12 16c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 8h-4v-2h4v2zm-8 0H6v-2h4v2z"/></svg>
+                    <span>Üret</span>
+                </button>
+                <img id="generatedImage" style="display: none; margin-top: 10px; max-width: 300px; height: auto;">
+                <button id="clearCanvasButton" class="action-button" title="Temizle">
+                    <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                    <span>Temizle</span>
+                </button>
+                <button id="undoActionButton" class="action-button" title="Geri Al">
+                    <svg viewBox="0 0 24 24"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.6c1.39-1.16 3.16-1.87 5.12-1.87 3.87 0 7 3.13 7 7s-3.13 7-7 7c-1.96 0-3.73-.71-5.12-1.88L11 16.9V8h1.5z"/></svg>
+                    <span>Geri Al</span>
+                </button>
+                <button id="redoActionButton" class="action-button" title="İleri Al">
+                    <svg viewBox="0 0 24 24"><path d="M11.5 8v8.9l3.6 3.6c-1.4 1.1-3.2 1.8-5.2 1.8-3.87 0-7-3.1-7-7 0-3.9 3.1-7 7-7 2.06 0 3.8.7 5.2 1.9L18 7v9h-9l3.5 3.5c-1.3 1.1-3 1.7-4.9 1.7-3.9 0-7.1-3.1-7.1-7 0-3.9 3.2-7 7.1-7 1.9 0 3.6.6 5 1.7L11.5 8z"/></svg>
+                    <span>İleri Al</span>
+                </button>
+                <div class="save-group">
+                    <button id="savePNGButton" class="action-button primary" title="PNG Kaydet">
+                        <svg viewBox="0 0 24 24"><path d="M19 12v7H5v-7H3v9h18v-9h-2zm-6 .67l2.59-2.58L17 11.5 12 16.5 7 11.5l1.41-1.41L11 12.67V3h2v9.67z"/></svg>
+                        <span>PNG</span>
+                    </button>
+                    <button id="saveJPEGButton" class="action-button primary" title="JPEG Kaydet">
+                        <svg viewBox="0 0 24 24"><path d="M19 12v7H5v-7H3v9h18v-9h-2zm-6 .67l2.59-2.58L17 11.5 12 16.5 7 11.5l1.41-1.41L11 12.67V3h2v9.67z"/></svg>
+                        <span>JPEG</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div id="eraserCursor"></div>
+        <input type="text" id="textInput" style="position: absolute; display: none; z-index: 12;">
+    </div>
+    <script>
+        class CanvasManager {
+    constructor(canvasId) {
+        this.canvas = document.getElementById(canvasId);
+        this.ctx = this.canvas.getContext("2d");
+        this.layers = [{ id: 0, canvas: this.canvas, ctx: this.ctx }];
+        this.activeLayerId = 0;
+        this.pathHistory = [];
+        this.redoHistory = [];
+        this.listeners = {}; // Özel olay dinleyicileri için
+        this.resizing = false;
+
+        this.resizeCanvas();
+        window.addEventListener("resize", () => {
+            this.resizing = true;
+            setTimeout(() => {
+                this.resizeCanvas();
+                this.resizing = false;
+            }, 150); // Kısa bir gecikme ile performansı artır
+        });
+        this.saveState(); // Başlangıç durumunu kaydet
+    }
+
+    getActiveContext() {
+        const activeLayer = this.layers.find(layer => layer.id === this.activeLayerId);
+        return activeLayer ? activeLayer.ctx : this.ctx;
+    }
+
+    resizeCanvas() {
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = this.canvas.width;
+        tempCanvas.height = this.canvas.height;
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCtx.drawImage(this.canvas, 0, 0);
+
+        this.canvas.width = window.innerWidth;
+        this.canvas.height = window.innerHeight;
+        this.getActiveContext().drawImage(tempCanvas, 0, 0);
+        this.saveState();
+        this.trigger("canvasresized");
+    }
+
+    addLayer() {
+        const newCanvas = document.createElement('canvas');
+        newCanvas.width = this.canvas.width;
+        newCanvas.height = this.canvas.height;
+        const newCtx = newCanvas.getContext('2d');
+        const newLayerId = Date.now(); // Basit bir ID oluşturma
+        this.layers.push({ id: newLayerId, canvas: newCanvas, ctx: newCtx });
+        this.activeLayerId = newLayerId;
+        this.trigger("layeradded", newLayerId);
+        this.renderLayers();
+    }
+
+    setActiveLayer(layerId) {
+        this.activeLayerId = parseInt(layerId);
+        this.trigger("layerchanged", this.activeLayerId);
+        this.renderLayers();
+    }
+
+    renderLayers() {
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        this.layers.forEach(layer => {
+            this.ctx.drawImage(layer.canvas, 0, 0);
+        });
+        this.saveState(); // Katman değişiminden sonra durumu kaydet
+    }
+
+    saveState() {
+        this.pathHistory.push(this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height));
+        this.redoHistory = [];
+        if (this.pathHistory.length > 50) {
+            this.pathHistory.shift();
+        }
+        this.trigger("historyupdated");
+    }
+
+    restoreState(imageData) {
+        this.ctx.putImageData(imageData, 0, 0);
+        this.trigger("historyupdated");
+    }
+
+    undo() {
+        if (this.pathHistory.length > 1) {
+            this.redoHistory.push(this.pathHistory.pop());
+            this.restoreState(this.pathHistory[this.pathHistory.length - 1]);
+        }
+    }
+
+    redo() {
+        if (this.redoHistory.length > 0) {
+            this.pathHistory.push(this.redoHistory.pop());
+            this.restoreState(this.pathHistory[this.pathHistory.length - 1]);
+        }
+    }
+
+    clear() {
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        this.pathHistory = [];
+        this.redoHistory = [];
+        this.saveState();
+    }
+
+    on(eventName, listener) {
+        this.listeners[eventName] = this.listeners[eventName] || [];
+        this.listeners[eventName].push(listener);
+    }
+
+    trigger(eventName, ...args) {
+        if (this.listeners[eventName]) {
+            this.listeners[eventName].forEach(listener => listener.apply(this, args));
+        }
+    }
+
+    getImageData(format = 'png') {
+        return this.canvas.toDataURL(`image/${format}`);
+    }
+}
+
+class Tool {
+    constructor(canvasManager, name) {
+        this.canvasManager = canvasManager;
+        this.name = name;
+        this.isActive = false;
+    }
+
+    activate() {
+        this.isActive = true;
+        this.canvasManager.trigger("toolchanged", this.name);
+    }
+
+    deactivate() {
+        this.isActive = false;
+    }
+
+    handleEvent(event) {
+        // Alt sınıflar tarafından uygulanacak
+    }
+}
+
+class PenTool extends Tool {
+    constructor(canvasManager) {
+        super(canvasManager, "pen");
+        this.isDrawing = false;
+        this.lastX = 0;
+        this.lastY = 0;
+        this.color = "#333";
+        this.size = 5;
+    }
+
+    activate() {
+        super.activate();
+        const ctx = this.canvasManager.getActiveContext();
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = this.size;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+    }
+
+    setColor(color) {
+        this.color = color;
+        if (this.isActive) {
+            this.canvasManager.getActiveContext().strokeStyle = this.color;
+        }
+    }
+
+    setSize(size) {
+        this.size = size;
+        if (this.isActive) {
+            this.canvasManager.getActiveContext().lineWidth = this.size;
+        }
+    }
+
+    handleEvent(event) {
+        const ctx = this.canvasManager.getActiveContext();
+        const x = event.clientX;
+        const y = event.clientY;
+
+        if (event.type === "mousedown") {
+            this.isDrawing = true;
+            [this.lastX, this.lastY] = [x, y];
+            ctx.beginPath();
+            ctx.moveTo(this.lastX, this.lastY);
+        } else if (event.type === "mousemove") {
+            if (!this.isDrawing) return;
+            ctx.lineTo(x, y);
+            ctx.stroke();
+            [this.lastX, this.lastY] = [x, y];
+        } else if (event.type === "mouseup" || event.type === "mouseout") {
+            if (this.isDrawing) {
+                this.isDrawing = false;
+                this.canvasManager.saveState();
+            }
+        }
+    }
+}
+
+class EraserTool extends Tool {
+    constructor(canvasManager) {
+        super(canvasManager, "eraser");
+        this.size = 10;
+        this.cursor = document.getElementById("eraserCursor");
+    }
+
+    activate() {
+        super.activate();
+        this.cursor.style.display = "block";
+    }
+
+    deactivate() {
+        super.deactivate();
+        this.cursor.style.display = "none";
+    }
+
+    setSize(size) {
+        this.size = size;
+        this.cursor.style.width = `${this.size}px`;
+        this.cursor.style.height = `${this.size}px`;
+    }
+
+    handleEvent(event) {
+        const ctx = this.canvasManager.getActiveContext();
+        const x = event.clientX;
+        const y = event.clientY;
+        const eraserOffset = this.size / 2;
+
+        this.cursor.style.left = `${x - eraserOffset}px`;
+        this.cursor.style.top = `${y - eraserOffset}px`;
+
+        if (event.type === "mousemove" && event.buttons > 0) {
+            ctx.clearRect(x - eraserOffset, y - eraserOffset, this.size, this.size);
+        } else if (event.type === "mouseup" || event.type === "mouseout") {
+            this.canvasManager.saveState();
+        }
+    }
+}
+
+class LineTool extends Tool {
+    constructor(canvasManager) {
+        super(canvasManager, "line");
+        this.isDrawing = false;
+        this.startX = 0;
+        this.startY = 0;
+        this.color = "#333";
+        this.size = 5;
+    }
+
+    activate() {
+        super.activate();
+        const ctx = this.canvasManager.getActiveContext();
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = this.size;
+        ctx.lineCap = "round";
+    }
+
+    setColor(color) {
+        this.color = color;
+        if (this.isActive) {
+            this.canvasManager.getActiveContext().strokeStyle = this.color;
+        }
+    }
+
+    setSize(size) {
+        this.size = size;
+        if (this.isActive) {
+            this.canvasManager.getActiveContext().lineWidth = this.size;
+        }
+    }
+
+    handleEvent(event) {
+        const ctx = this.canvasManager.getActiveContext();
+        const x = event.clientX;
+        const y = event.clientY;
+
+        if (event.type === "mousedown") {
+            this.isDrawing = true;
+            [this.startX, this.startY] = [x, y];
+        } else if (event.type === "mousemove") {
+            if (!this.isDrawing) return;
+            this.canvasManager.renderLayers(); // Önceki çizimleri temizle
+            ctx.beginPath();
+            ctx.moveTo(this.startX, this.startY);
+            ctx.lineTo(x, y);
+            ctx.stroke();
+        } else if (event.type === "mouseup" || event.type === "mouseout") {
+            if (this.isDrawing) {
+                this.isDrawing = false;
+                this.canvasManager.saveState();
+            }
+        }
+    }
+}
+
+class RectTool extends Tool {
+    constructor(canvasManager) {
+        super(canvasManager, "rect");
+        this.isDrawing = false;
+        this.startX = 0;
+        this.startY = 0;
+        this.color = "#333";
+        this.size = 5;
+    }
+
+    activate() {
+        super.activate();
+        const ctx = this.canvasManager.getActiveContext();
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = this.size;
+    }
+
+    setColor(color) {
+        this.color = color;
+        if (this.isActive) {
+            this.canvasManager.getActiveContext().strokeStyle = this.color;
+        }
+    }
+
+    setSize(size) {
+        this.size = size;
+        if (this.isActive) {
+            this.canvasManager.getActiveContext().lineWidth = this.size;
+        }
+    }
+
+    handleEvent(event) {
+        const ctx = this.canvasManager.getActiveContext();
+        const x = event.clientX;
+        const y = event.clientY;
+
+        if (event.type === "mousedown") {
+            this.isDrawing = true;
+            [this.startX, this.startY] = [x, y];
+        } else if (event.type === "mousemove") {
+            if (!this.isDrawing) return;
+            this.canvasManager.renderLayers();
+            ctx.strokeRect(this.startX, this.startY, x - this.startX, y - this.startY);
+        } else if (event.type === "mouseup" || event.type === "mouseout") {
+            if (this.isDrawing) {
+                this.isDrawing = false;
+                this.canvasManager.saveState();
+            }
+        }
+    }
+}
+
+class CircleTool extends Tool {
+    constructor(canvasManager) {
+        super(canvasManager, "circle");
+        this.isDrawing = false;
+        this.startX = 0;
+        this.startY = 0;
+        this.color = "#333";
+        this.size = 5;
+    }
+
+    activate() {
+        super.activate();
+        const ctx = this.canvasManager.getActiveContext();
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = this.size;
+    }
+
+    setColor(color) {
+        this.color = color;
+        if (this.isActive) {
+            this.canvasManager.getActiveContext().strokeStyle = this.color;
+        }
+    }
+
+    setSize(size) {
+        this.size = size;
+        if (this.isActive) {
+            this.canvasManager.getActiveContext().lineWidth = this.size;
+        }
+    }
+
+    handleEvent(event) {
+        const ctx = this.canvasManager.getActiveContext();
+        const x = event.clientX;
+        const y = event.clientY;
+
+        if (event.type === "mousedown") {
+            this.isDrawing = true;
+            [this.startX, this.startY] = [x, y];
+        } else if (event.type === "mousemove") {
+            if (!this.isDrawing) return;
+            this.canvasManager.renderLayers();
+            const radiusX = (x - this.startX) / 2;
+            const radiusY = (y - this.startY) / 2;
+            const centerX = this.startX + radiusX;
+            const centerY = this.startY + radiusY;
+            ctx.beginPath();
+            ctx.ellipse(centerX, centerY, Math.abs(radiusX), Math.abs(radiusY), 0, 0, 2 * Math.PI);
+            ctx.stroke();
+        } else if (event.type === "mouseup" || event.type === "mouseout") {
+            if (this.isDrawing) {
+                this.isDrawing = false;
+                this.canvasManager.saveState();
+            }
+        }
+    }
+}
+
+class TextTool extends Tool {
+    constructor(canvasManager) {
+        super(canvasManager, "text");
+        this.isTyping = false;
+        this.x = 0;
+        this.y = 0;
+        this.color = "#333";
+        this.size = 20;
+        this.font = `bold ${this.size}px sans-serif`;
+        this.textInput = document.getElementById("textInput");
+    }
+
+    activate() {
+        super.activate();
+        this.textInput.style.display = "none";
+    }
+
+    setColor(color) {
+        this.color = color;
+    }
+
+    setSize(size) {
+        this.size = size;
+        this.font = `bold ${this.size}px sans-serif`;
+    }
+
+    handleEvent(event) {
+        const ctx = this.canvasManager.getActiveContext();
+        const x = event.clientX;
+        const y = event.clientY;
+
+        if (event.type === "mousedown" && !this.isTyping) {
+            this.x = x;
+            this.y = y;
+            this.textInput.style.left = `${x}px`;
+            this.textInput.style.top = `${y}px`;
+            this.textInput.style.fontSize = `${this.size}px`;
+            this.textInput.style.color = this.color;
+            this.textInput.style.display = "block";
+            this.textInput.focus();
+            this.isTyping = true;
+        } else if (event.type === "blur" && event.target === this.textInput && this.isTyping) {
+            ctx.font = this.font;
+            ctx.fillStyle = this.color;
+            ctx.fillText(this.textInput.value, this.x, this.y + this.size); // Baseline ayarı
+            this.textInput.value = "";
+            this.textInput.style.display = "none";
+            this.isTyping = false;
+            this.canvasManager.saveState();
+        }
+    }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    const canvasManager = new CanvasManager("drawingCanvas");
+    const penTool = new PenTool(canvasManager);
+    const eraserTool = new EraserTool(canvasManager);
+    const lineTool = new LineTool(canvasManager);
+    const rectTool = new RectTool(canvasManager);
+    const circleTool = new CircleTool(canvasManager);
+    const textTool = new TextTool(canvasManager);
+
+    let activeTool = penTool;
+    activeTool.activate();
+
+    const toolButtons = {
+        pen: document.getElementById("penToolButton"),
+        eraser: document.getElementById("eraserToolButton"),
+        line: document.getElementById("lineToolButton"),
+        rect: document.getElementById("rectToolButton"),
+        circle: document.getElementById("circleToolButton"),
+        text: document.getElementById("textToolButton"),
+    };
+
+    Object.keys(toolButtons).forEach(toolName => {
+        toolButtons[toolName].addEventListener("click", () => {
+            activeTool.deactivate();activeTool = eval(`${toolName}Tool`);
+            activeTool.activate();
+            // Araç butonlarının aktif stilini güncelle
+            Object.values(toolButtons).forEach(btn => btn.classList.remove("active"));
+            toolButtons[toolName].classList.add("active");
+        });
+    });
+
+    const penColorInput = document.getElementById("penColor");
+    const penSizeInput = document.getElementById("penSize");
+    const penSizeValueDisplay = document.getElementById("penSizeValue");
+    const clearCanvasButton = document.getElementById("clearCanvasButton");
+    const undoActionButton = document.getElementById("undoActionButton");
+    const redoActionButton = document.getElementById("redoActionButton");
+    const addLayerButton = document.getElementById("addLayerButton");
+    const layerList = document.getElementById("layerList");
+    const savePNGButton = document.getElementById("savePNGButton");
+    const saveJPEGButton = document.getElementById("saveJPEGButton");
+    const generateButton = document.getElementById('generateButton');
+    const promptInput = document.getElementById('promptInput');
+    const generatedImage = document.getElementById('generatedImage');
+
+    drawingCanvas.addEventListener("mousedown", (e) => activeTool.handleEvent(e));
+    drawingCanvas.addEventListener("mousemove", (e) => activeTool.handleEvent(e));
+    drawingCanvas.addEventListener("mouseup", (e) => activeTool.handleEvent(e));
+    drawingCanvas.addEventListener("mouseout", (e) => activeTool.handleEvent(e));
+    drawingCanvas.addEventListener("blur", (e) => activeTool.handleEvent(e)); // Metin aracı için
+
+    if (generateButton) {
+    generateButton.addEventListener('click', async () => {
+        const drawingBase64 = canvasManager.getImageData('png');
+
+        const response = await fetch('/generate_image', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ drawing: drawingBase64 })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.image_url) {
+            generatedImage.src = data.image_url;
+            generatedImage.style.display = 'block';
+        } else {
+            alert(data.error || 'Görüntü oluşturulurken bir hata oluştu.');
+        }
+    });
+}
+
+    penColorInput.addEventListener("input", (e) => {
+        penTool.setColor(e.target.value);
+        lineTool.setColor(e.target.value);
+        rectTool.setColor(e.target.value);
+        circleTool.setColor(e.target.value);
+        textTool.setColor(e.target.value);
+    });
+
+    penSizeInput.addEventListener("input", (e) => {
+        const size = parseInt(e.target.value, 10);
+        penTool.setSize(size);
+        lineTool.setSize(size);
+        rectTool.setSize(size);
+        circleTool.setSize(size);
+        eraserTool.setSize(size * 5);
+        textTool.setSize(size * 2);
+        penSizeValueDisplay.textContent = size;
+    });
+
+    clearCanvasButton.addEventListener("click", () => canvasManager.clear());
+    undoActionButton.addEventListener("click", () => canvasManager.undo());
+    redoActionButton.addEventListener("click", () => canvasManager.redo());
+
+    addLayerButton.addEventListener("click", () => canvasManager.addLayer());
+
+    canvasManager.on("layeradded", (layerId) => {
+        const layerDiv = document.createElement("div");
+        layerDiv.classList.add("layer");
+        layerDiv.dataset.layerId = layerId;
+        layerDiv.textContent = `Katman ${canvasManager.layers.length}`;
+        layerDiv.addEventListener("click", (e) => {
+            canvasManager.setActiveLayer(e.target.dataset.layerId);
+            document.querySelectorAll("#layerList .layer").forEach(l => l.classList.remove("active"));
+            e.target.classList.add("active");
+        });
+        layerList.appendChild(layerDiv);
+        // Yeni katman eklendiğinde tüm katmanları pasif yapıp yenisini aktif yap
+        document.querySelectorAll("#layerList .layer").forEach(l => l.classList.remove("active"));
+        layerDiv.classList.add("active");
+    });
+
+    canvasManager.on("layerchanged", (activeLayerId) => {
+        document.querySelectorAll("#layerList .layer").forEach(layerDiv => {
+            layerDiv.classList.toggle("active", parseInt(layerDiv.dataset.layerId) === activeLayerId);
+        });
+    });
+
+    // Başlangıçta bir katman olduğu için onu aktif göster
+    document.querySelector("#layerList .layer").classList.add("active");
+
+    savePNGButton.addEventListener("click", () => {
+        const dataURL = canvasManager.getImageData('png');
+        const a = document.createElement("a");
+        a.href = dataURL;
+        a.download = "cizimim.png";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    });
+
+    saveJPEGButton.addEventListener("click", () => {
+        const dataURL = canvasManager.getImageData('jpeg');
+        const a = document.createElement("a");
+        a.href = dataURL;
+        a.download = "cizimim.jpeg";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    });
+
+    // Araç çubuğu hareket işlevselliği (burada kalabilir veya ayrı bir modüle taşınabilir)
+    const toolbar = document.getElementById("toolbar");
+    let isDragging = false;
+    let offsetX, offsetY;
+
+    toolbar.addEventListener("mousedown", (e) => {
+        isDragging = true;
+        toolbar.classList.add("dragging");
+        offsetX = e.clientX - toolbar.getBoundingClientRect().left;
+        offsetY = e.clientY - toolbar.getBoundingClientRect().top;
+    });
+
+    document.addEventListener("mouseup", () => {
+        isDragging = false;
+        toolbar.classList.remove("dragging");
+    });
+
+    document.addEventListener("mousemove", (e) => {
+        if (!isDragging) return;
+        toolbar.style.left = e.clientX - offsetX + "px";
+        toolbar.style.top = e.clientY - offsetY + "px";
+    });
+});
+    </script>
+</body>
+</html>
